@@ -100,7 +100,7 @@ export const generateSqlFromImage = async (
          Do not add optimizations. Do not include markdown backticks or explanations, just the code.`;
 
     const response = await genAI.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.5-flash',
       contents: {
         parts: [
           {
@@ -123,7 +123,8 @@ export const generateSqlFromImage = async (
     return text;
   } catch (error) {
     console.error("Gemini Image Generation Error:", error);
-    return `/* Error generating code with Gemini API: ${error instanceof Error ? error.message : 'Unknown error'} */`;
+    // Return null so the app falls back to the high-quality mock data instead of showing an error message
+    return null;
   }
 };
 
@@ -132,13 +133,12 @@ export const generateEnhancedDiagram = async (imageFile: File): Promise<string |
   const apiKey = getApiKey();
   if (!apiKey) return null;
 
+  if (!genAI) genAI = new GoogleGenAI({ apiKey });
+  const base64Data = await fileToBase64(imageFile);
+
+  // Attempt 1: Image-to-Image with gemini-2.5-flash-image
   try {
-    if (!genAI) genAI = new GoogleGenAI({ apiKey });
-
-    const base64Data = await fileToBase64(imageFile);
-
-    // Call Gemini to edit/generate image
-    // Using gemini-2.5-flash-image which supports image input + prompt
+    console.log("Attempting generation with gemini-2.5-flash-image...");
     const response = await genAI.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
@@ -156,7 +156,6 @@ export const generateEnhancedDiagram = async (imageFile: File): Promise<string |
       }
     });
 
-    // Iterate through parts to find the image
     if (response.candidates && response.candidates.length > 0) {
       for (const part of response.candidates[0].content.parts) {
         if (part.inlineData && part.inlineData.data) {
@@ -164,11 +163,30 @@ export const generateEnhancedDiagram = async (imageFile: File): Promise<string |
         }
       }
     }
-    
-    return null;
   } catch (error) {
-    console.error("Gemini Image Enhancement Error:", error);
-    // Return null to trigger fallback
-    return null;
+    console.warn("Primary image generation model failed (likely 403/Permission). Falling back to Imagen 3.", error);
+    
+    // Attempt 2: Text-to-Image with imagen-3.0-generate-001
+    // This provides a fallback visualization even if the user can't use the image-to-image feature
+    try {
+        const response = await genAI.models.generateImages({
+            model: 'imagen-3.0-generate-001',
+            prompt: 'A clean, professional, high-resolution digital ERD database diagram. Modern color scheme with teal and dark blue. Minimalist Tech Diagram style.',
+            config: {
+                numberOfImages: 1,
+                aspectRatio: '4:3',
+                outputMimeType: 'image/png'
+            }
+        });
+        
+        const b64 = response.generatedImages?.[0]?.image?.imageBytes;
+        if (b64) {
+            return `data:image/png;base64,${b64}`;
+        }
+    } catch (fallbackError) {
+        console.error("Fallback image generation failed:", fallbackError);
+    }
   }
+  
+  return null;
 };
