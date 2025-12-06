@@ -1,0 +1,5 @@
+{
+  "name": "VisionDB Architect",
+  "description": "Convert database diagrams into production-ready SQL using AI analysis.",
+  "requestFramePermissions": []
+}
