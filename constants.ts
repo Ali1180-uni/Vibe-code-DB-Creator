@@ -1,6 +1,7 @@
 import { DatabaseDialect } from './types';
 
 const TIMESTAMP = new Date().toISOString();
+export const MOCK_ENHANCED_DIAGRAM_URL = "https://placehold.co/1200x900/0f172a/22d3ee?text=Enhanced+Schema+Diagram%0A(Normalized+%26+Optimized)+%E2%9C%A8";
 
 // --- OPTIMIZED / ENHANCED MOCKS (Nano Banana Mode) ---
 

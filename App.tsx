@@ -1,20 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { MessageSquare, FileCode, Zap, Layers, ChevronDown, Database, Upload, ArrowRight } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { MessageSquare, FileCode, Zap, Layers, ChevronDown, Database, Upload, ArrowRight, Wand2, Settings, Loader2 } from 'lucide-react';
 import DragDropZone from './components/DragDropZone';
 import CodeEditor from './components/CodeEditor';
 import ConsultantSidebar from './components/ConsultantSidebar';
+import SettingsModal from './components/SettingsModal';
 import { WorkflowStage, Message, DatabaseDialect } from './types';
-import { ENHANCED_CODE_BY_DIALECT, RAW_CODE_BY_DIALECT } from './constants';
-import { convertImageToSqlMock, initChat } from './services/geminiService';
+import { ENHANCED_CODE_BY_DIALECT, RAW_CODE_BY_DIALECT, MOCK_ENHANCED_DIAGRAM_URL } from './constants';
+import { convertImageToSqlMock, initChat, updateApiKey, generateSqlFromImage, generateEnhancedDiagram } from './services/geminiService';
 
 const App = () => {
   const [workflowStage, setWorkflowStage] = useState<WorkflowStage>(WorkflowStage.UPLOAD);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [enhancedImage, setEnhancedImage] = useState<string | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [showEnhancedPreview, setShowEnhancedPreview] = useState(false);
   const [code, setCode] = useState<string>('');
   const [chatOpen, setChatOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [dialect, setDialect] = useState<DatabaseDialect>('PostgreSQL');
   const [useEnhancedMode, setUseEnhancedMode] = useState<boolean>(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
     // Initialize Gemini Chat on mount
@@ -27,6 +32,7 @@ const App = () => {
 
   // --- Step 1: Analysis & Proposal ---
   const handleFileSelect = async (file: File) => {
+    setUploadedFile(file);
     // 1. Create preview
     const reader = new FileReader();
     reader.onload = (e) => setImagePreview(e.target?.result as string);
@@ -57,26 +63,104 @@ const App = () => {
   };
 
   // --- Step 2: The Decision ---
-  const handleReviewDecision = (decision: string) => {
-    const isEnhanced = decision === 'enhanced';
-    setUseEnhancedMode(isEnhanced);
-    
-    // Add user response to chat history visually
-    const userResp: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      text: isEnhanced ? "Let's use the Enhanced version." : "Stick to the original.",
-      timestamp: new Date()
-    };
-    addMessage(userResp);
+  const handleReviewDecision = async (decision: string) => {
+    if (decision === 'original') {
+      // Direct path for original
+      setUseEnhancedMode(false);
+      setShowEnhancedPreview(false);
+      addMessage({
+        id: Date.now().toString(),
+        role: 'user',
+        text: "Stick to the original.",
+        timestamp: new Date()
+      });
+      triggerDatabaseSelection();
+    } else {
+      // --- Cinematic Loading State ---
+      addMessage({
+        id: Date.now().toString(),
+        role: 'user',
+        text: "Let's see the Enhanced version.",
+        timestamp: new Date()
+      });
+      
+      setWorkflowStage(WorkflowStage.SIMULATING_ENHANCEMENT);
+      
+      // Execute 3s Timer and API Call in parallel
+      const timerPromise = new Promise(resolve => setTimeout(resolve, 3000));
+      
+      let generatedImageUrl: string | null = null;
+      if (uploadedFile) {
+        try {
+          generatedImageUrl = await generateEnhancedDiagram(uploadedFile);
+        } catch (e) {
+          console.error("Failed to generate image", e);
+        }
+      }
 
-    // Transition to Format Select
+      await timerPromise;
+
+      // Set enhanced image (either real generation or mock fallback)
+      setEnhancedImage(generatedImageUrl || MOCK_ENHANCED_DIAGRAM_URL);
+      setShowEnhancedPreview(true);
+      setWorkflowStage(WorkflowStage.DIAGRAM_APPROVAL);
+      
+      const previewMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'model',
+        text: "I've generated a visual preview of the enhanced schema. Note the normalized tables and consistent naming conventions.\n\nDo you approve of these structural changes?",
+        timestamp: new Date(),
+        action: {
+          type: 'BUTTON',
+          options: [
+            { label: 'Approve & Generate Code', value: 'approve', style: 'primary' },
+            { label: 'Reject & Return to Original', value: 'reject', style: 'secondary' }
+          ]
+        }
+      };
+      addMessage(previewMsg);
+    }
+  };
+
+  // --- Step 2.5: Approval Logic ---
+  const handleDiagramApproval = (decision: string) => {
+    if (decision === 'approve') {
+      setUseEnhancedMode(true);
+      setShowEnhancedPreview(true); // Keep enhanced visible
+      
+      addMessage({
+        id: Date.now().toString(),
+        role: 'user',
+        text: "Approved. Generate the code.",
+        timestamp: new Date()
+      });
+      
+      triggerDatabaseSelection();
+    } else {
+      // Revert
+      setUseEnhancedMode(false);
+      setShowEnhancedPreview(false); // Revert to original image
+      
+      addMessage({
+        id: Date.now().toString(),
+        role: 'user',
+        text: "I don't like it. Let's go back to the original.",
+        timestamp: new Date()
+      });
+
+      // Proceed to DB selection with Original mode
+      triggerDatabaseSelection();
+    }
+  };
+
+  // --- Step 3: Database Selection ---
+  const triggerDatabaseSelection = () => {
     setWorkflowStage(WorkflowStage.FORMAT_SELECT);
 
     const recommendationMsg: Message = {
-      id: (Date.now() + 1).toString(),
+      id: (Date.now() + 10).toString(),
       role: 'model',
-      text: "Great choice. Based on the relational structure (Users, Orders), I recommend **PostgreSQL**.\n\nWhich database would you like to generate code for?",
+      text: "Great. Based on the relational structure (Users, Orders), I recommend **PostgreSQL**.\n\nWhich database would you like to generate code for?",
       timestamp: new Date(),
       action: {
         type: 'SELECT',
@@ -92,16 +176,14 @@ const App = () => {
       }
     };
     
-    // Small delay to make it feel natural
-    setTimeout(() => addMessage(recommendationMsg), 600);
+    setTimeout(() => addMessage(recommendationMsg), 800);
   };
 
-  // --- Step 3: Database Selection & Generation ---
+  // --- Step 4: Generation ---
   const handleDatabaseSelection = async (selectedDialect: string) => {
     const db = selectedDialect as DatabaseDialect;
     setDialect(db);
 
-    // Add user response
     addMessage({
       id: Date.now().toString(),
       role: 'user',
@@ -109,18 +191,24 @@ const App = () => {
       timestamp: new Date()
     });
 
-    // Transition to Generating
     setWorkflowStage(WorkflowStage.GENERATING);
-
-    // Simulate generation time
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
-    // --- Step 4: Final Output ---
-    const finalCode = useEnhancedMode 
-      ? ENHANCED_CODE_BY_DIALECT[db] 
-      : RAW_CODE_BY_DIALECT[db];
     
-    setCode(finalCode);
+    let generatedCode: string | null = null;
+    
+    // Attempt Real API generation if file exists
+    if (uploadedFile) {
+        generatedCode = await generateSqlFromImage(uploadedFile, db, useEnhancedMode);
+    }
+
+    if (!generatedCode) {
+        // Fallback to Mock
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        generatedCode = useEnhancedMode 
+          ? ENHANCED_CODE_BY_DIALECT[db] 
+          : RAW_CODE_BY_DIALECT[db];
+    }
+    
+    setCode(generatedCode);
     setWorkflowStage(WorkflowStage.DONE);
 
     addMessage({
@@ -134,6 +222,8 @@ const App = () => {
   const handleActionClick = (value: string) => {
     if (workflowStage === WorkflowStage.REVIEW) {
       handleReviewDecision(value);
+    } else if (workflowStage === WorkflowStage.DIAGRAM_APPROVAL) {
+      handleDiagramApproval(value);
     } else if (workflowStage === WorkflowStage.FORMAT_SELECT) {
       handleDatabaseSelection(value);
     }
@@ -141,22 +231,31 @@ const App = () => {
 
   const clearSession = () => {
     setImagePreview(null);
+    setEnhancedImage(null);
+    setUploadedFile(null);
     setWorkflowStage(WorkflowStage.UPLOAD);
     setCode('');
     setMessages([]);
     setUseEnhancedMode(true);
+    setShowEnhancedPreview(false);
   };
 
-  // Handle manual dialect change in header after generation
   const handleManualDialectChange = (newDialect: DatabaseDialect) => {
     setDialect(newDialect);
-    if (workflowStage === WorkflowStage.DONE) {
-       setCode(useEnhancedMode ? ENHANCED_CODE_BY_DIALECT[newDialect] : RAW_CODE_BY_DIALECT[newDialect]);
-    }
+    // Note: In a real app we might re-trigger generation here, but for now we just stick to what we have or reload mocks
+  };
+
+  const handleApiKeySave = (key: string) => {
+    updateApiKey(key);
   };
 
   return (
     <div className="h-screen w-screen flex flex-col bg-[#020617] text-slate-200 overflow-hidden font-sans">
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)}
+        onSave={handleApiKeySave}
+      />
       
       {/* Navbar */}
       <nav className="flex-none h-14 border-b border-slate-800 bg-slate-950 flex items-center justify-between px-4 z-40">
@@ -170,6 +269,14 @@ const App = () => {
         </div>
         
         <div className="flex items-center gap-3">
+          <button
+             onClick={() => setIsSettingsOpen(true)}
+             className="p-2 text-slate-400 hover:text-white transition-colors"
+             title="API Settings"
+          >
+             <Settings size={18} />
+          </button>
+          
           <button 
             onClick={() => setChatOpen(!chatOpen)}
             className={`
@@ -196,11 +303,15 @@ const App = () => {
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
         
         {/* Left Panel: Image / Upload */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0 border-b lg:border-b-0 lg:border-r border-slate-800 bg-[#0F172A]/30">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 border-b lg:border-b-0 lg:border-r border-slate-800 bg-[#0F172A]/30 transition-colors duration-500 relative">
            {/* Panel Header */}
-           <div className="flex-none h-12 flex items-center justify-between px-4 border-b border-slate-800 bg-slate-900/50">
-              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
-                 <Zap size={14} className="text-cyan-500" /> Source Diagram
+           <div className={`flex-none h-12 flex items-center justify-between px-4 border-b border-slate-800 bg-slate-900/50 ${showEnhancedPreview ? 'border-b-cyan-900/50 bg-cyan-950/10' : ''}`}>
+              <h2 className={`text-xs font-semibold uppercase tracking-wider flex items-center gap-2 ${showEnhancedPreview ? 'text-cyan-400' : 'text-slate-400'}`}>
+                 {showEnhancedPreview ? (
+                    <><Wand2 size={14} className="animate-pulse" /> Enhanced Diagram Preview</>
+                 ) : (
+                    <><Zap size={14} /> Source Diagram</>
+                 )}
               </h2>
               {imagePreview && (
                 <button 
@@ -214,13 +325,38 @@ const App = () => {
 
            {/* Panel Content */}
            <div className="flex-1 overflow-auto p-4 relative flex items-center justify-center bg-[#0B1221]">
+              {/* Cinematic Loading Overlay */}
+              {workflowStage === WorkflowStage.SIMULATING_ENHANCEMENT && (
+                <div className="absolute inset-0 z-20 bg-[#0F172A]/90 backdrop-blur-sm flex flex-col items-center justify-center">
+                    <div className="relative mb-6">
+                        <div className="w-20 h-20 border-4 border-slate-800 rounded-full"></div>
+                        <div className="absolute top-0 left-0 w-20 h-20 border-4 border-t-cyan-500 border-r-cyan-500/30 border-b-transparent border-l-transparent rounded-full animate-spin"></div>
+                        <div className="absolute inset-0 flex items-center justify-center">
+                           <Wand2 size={32} className="text-cyan-400 animate-pulse" />
+                        </div>
+                    </div>
+                    <p className="text-lg font-medium text-cyan-400 animate-pulse mb-2">
+                        AI Architect is normalizing schema...
+                    </p>
+                    <p className="text-slate-400 text-sm">
+                        Optimizing relationships & applying constraints
+                    </p>
+                </div>
+              )}
+
               {imagePreview ? (
-                <div className="w-full h-full flex items-center justify-center p-2">
+                <div className="w-full h-full flex items-center justify-center p-2 relative">
                   <img 
-                    src={imagePreview} 
-                    alt="Uploaded Diagram" 
-                    className="max-w-full max-h-full object-contain shadow-lg"
+                    src={showEnhancedPreview ? (enhancedImage || MOCK_ENHANCED_DIAGRAM_URL) : imagePreview} 
+                    alt="Diagram" 
+                    className={`max-w-full max-h-full object-contain shadow-lg transition-all duration-500 ${showEnhancedPreview ? 'scale-[0.98] ring-2 ring-cyan-500/30 rounded-lg' : ''}`}
                   />
+                  {showEnhancedPreview && (
+                    <div className="absolute top-6 right-6 bg-cyan-500 text-white text-[10px] font-bold px-2 py-1 rounded shadow-lg shadow-cyan-500/20 animate-fade-in z-10 flex items-center gap-1">
+                        <SparklesIcon size={10} />
+                        Generated with Nano Banana
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="w-full h-full max-w-xl max-h-[400px]">
@@ -288,5 +424,22 @@ const App = () => {
     </div>
   );
 };
+
+// Simple Icon component for the badge to avoid import clutter
+const SparklesIcon = ({ size = 16 }: { size?: number }) => (
+    <svg 
+      xmlns="http://www.w3.org/2000/svg" 
+      width={size} 
+      height={size} 
+      viewBox="0 0 24 24" 
+      fill="none" 
+      stroke="currentColor" 
+      strokeWidth="2" 
+      strokeLinecap="round" 
+      strokeLinejoin="round"
+    >
+      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+    </svg>
+);
 
 export default App;
