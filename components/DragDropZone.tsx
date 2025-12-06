@@ -37,8 +37,9 @@ const DragDropZone: React.FC<DragDropZoneProps> = ({ onFileSelect }) => {
   };
 
   const validateAndPassFile = (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      setError("Please upload a valid image file (PNG, JPG).");
+    const validTypes = ['image/png', 'image/jpeg'];
+    if (!validTypes.includes(file.type)) {
+      setError("Invalid file type. Please upload a PNG or JPG image.");
       return;
     }
     onFileSelect(file);
@@ -60,7 +61,7 @@ const DragDropZone: React.FC<DragDropZoneProps> = ({ onFileSelect }) => {
     >
       <input
         type="file"
-        accept="image/*"
+        accept="image/png, image/jpeg"
         onChange={handleFileInput}
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
       />
@@ -81,9 +82,9 @@ const DragDropZone: React.FC<DragDropZoneProps> = ({ onFileSelect }) => {
       </div>
 
       {error && (
-        <div className="absolute bottom-4 left-0 right-0 mx-auto w-max flex items-center gap-2 text-red-400 bg-red-900/20 px-4 py-2 rounded-full border border-red-900/50">
+        <div className="absolute bottom-4 left-0 right-0 mx-auto w-max flex items-center gap-2 text-red-400 bg-red-900/20 px-4 py-2 rounded-full border border-red-900/50 animate-bounce">
           <AlertCircle size={16} />
-          <span className="text-sm">{error}</span>
+          <span className="text-sm font-medium">{error}</span>
         </div>
       )}
     </div>

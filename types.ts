@@ -17,6 +17,16 @@ export interface AnalysisResult {
   suggestions: string[];
 }
 
+export interface ArchitectureEntity {
+  name: string;
+  description: string;
+}
+
+export interface ArchitectureAnalysis {
+  executiveSummary: string;
+  entities: ArchitectureEntity[];
+}
+
 export enum WorkflowStage {
   UPLOAD = 'UPLOAD',
   ANALYZING = 'ANALYZING',

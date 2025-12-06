@@ -11,6 +11,8 @@ interface CodeEditorProps {
 const CodeEditor: React.FC<CodeEditorProps> = ({ code, stage, dialect }) => {
   const [copied, setCopied] = React.useState(false);
 
+  // --- Handlers ---
+
   const handleCopy = () => {
     navigator.clipboard.writeText(code);
     setCopied(true);
@@ -30,7 +32,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ code, stage, dialect }) => {
     URL.revokeObjectURL(url);
   };
 
-  // Loading / Processing State
+  // --- Render States ---
+
   if (stage === WorkflowStage.ANALYZING || stage === WorkflowStage.GENERATING) {
     return (
       <div className="h-full w-full flex flex-col items-center justify-center space-y-6 text-slate-400 bg-[#0F172A]">
@@ -43,18 +46,17 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ code, stage, dialect }) => {
         </div>
         <div className="text-center space-y-2">
             <p className="font-mono text-sm tracking-widest uppercase text-cyan-400">
-                {stage === WorkflowStage.ANALYZING ? 'Analyzing Diagram' : 'Generating Code'}
+                {stage === WorkflowStage.ANALYZING ? 'Consulting Gemini' : 'Generating Schema'}
             </p>
             <p className="text-xs text-slate-600">
-                {stage === WorkflowStage.ANALYZING ? 'Extracting entities & relationships...' : 'Applying dialect specific formatting...'}
+                Processing with real-time AI...
             </p>
         </div>
       </div>
     );
   }
 
-  // Waiting for Decision State
-  if (stage === WorkflowStage.REVIEW || stage === WorkflowStage.FORMAT_SELECT) {
+  if (stage === WorkflowStage.REVIEW || stage === WorkflowStage.FORMAT_SELECT || stage === WorkflowStage.DIAGRAM_APPROVAL) {
     return (
         <div className="h-full w-full flex flex-col items-center justify-center text-slate-500 bg-[#0F172A] p-8 text-center">
             <div className="w-full max-w-md bg-slate-900/50 border border-dashed border-slate-700 rounded-xl p-8 flex flex-col items-center">
@@ -63,21 +65,20 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ code, stage, dialect }) => {
                 </div>
                 <h3 className="text-slate-200 font-medium mb-2">Awaiting Feedback</h3>
                 <p className="text-sm text-slate-400">
-                    Please check the AI Consultant sidebar to review the analysis and select your target database.
+                    Please check the AI Consultant sidebar to proceed.
                 </p>
             </div>
         </div>
     );
   }
 
-  // Idle State
-  if (!code || stage === WorkflowStage.UPLOAD) {
+  if (!code || stage === WorkflowStage.UPLOAD || stage === WorkflowStage.SIMULATING_ENHANCEMENT) {
     return (
       <div className="h-full w-full flex flex-col items-center justify-center text-slate-600 bg-[#0F172A]">
         <div className="p-4 rounded-full bg-slate-900/50 mb-4">
             <div className="w-8 h-8 border-2 border-dashed border-slate-700 rounded opacity-50"></div>
         </div>
-        <p className="font-mono text-xs">Waiting for diagram...</p>
+        <p className="font-mono text-xs">Waiting for generated code...</p>
       </div>
     );
   }
@@ -88,9 +89,9 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ code, stage, dialect }) => {
 
   return (
     <div className="flex flex-col h-full w-full bg-[#0F172A]">
-      {/* Code Area */}
       <div className="flex-1 overflow-auto custom-scrollbar relative">
-        {/* Floating Actions */}
+        
+        {/* Floating Actions Header */}
         <div className="sticky top-0 z-10 flex justify-between items-start p-4 pointer-events-none">
            <span className="text-xs font-mono text-slate-500 select-none bg-slate-900/90 backdrop-blur px-2 py-1 rounded border border-slate-800">
              {fileName}
@@ -106,21 +107,24 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ code, stage, dialect }) => {
             <button 
               onClick={handleDownload}
               className="p-1.5 text-slate-400 hover:text-cyan-400 hover:bg-cyan-950/50 rounded transition-colors"
-              title="Download"
+              title="Download SQL"
             >
               <Download size={14} />
             </button>
           </div>
         </div>
 
+        {/* Code Content */}
         <div className="px-4 pb-8 -mt-12 pt-14 min-w-max">
             <pre className="font-mono text-[13px] leading-6 text-slate-300">
             <code>
                 {code.split('\n').map((line, i) => (
                 <div key={i} className="table-row hover:bg-slate-800/30 transition-colors">
-                    <span className="table-cell text-right pr-6 text-slate-700 select-none w-10 text-[11px] align-top py-[1px]">{i + 1}</span>
+                    <span className="table-cell text-right pr-6 text-slate-700 select-none w-10 text-[11px] align-top py-[1px]">
+                        {i + 1}
+                    </span>
                     <span className="table-cell whitespace-pre align-top py-[1px]">
-                    {highlightSyntax(line, dialect)}
+                        {highlightSyntax(line, dialect)}
                     </span>
                 </div>
                 ))}
@@ -132,7 +136,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ code, stage, dialect }) => {
   );
 };
 
-// Visual highlighter
+// --- Syntax Highlighting Helpers ---
+
 const highlightSyntax = (line: string, dialect: DatabaseDialect) => {
   if (dialect === 'MongoDB') return highlightMongo(line);
   if (dialect === 'Prisma') return highlightPrisma(line);
@@ -140,26 +145,28 @@ const highlightSyntax = (line: string, dialect: DatabaseDialect) => {
 };
 
 const highlightSql = (line: string) => {
-  const keywords = ['CREATE', 'TABLE', 'ALTER', 'ADD', 'FOREIGN', 'KEY', 'REFERENCES', 'INDEX', 'ON', 'DEFAULT', 'NOT', 'NULL', 'UNIQUE', 'PRIMARY', 'CHECK', 'CONSTRAINT', 'IDENTITY', 'AUTO_INCREMENT', 'ENGINE', 'InnoDB', 'GO', 'USE', 'IF', 'EXISTS', 'ASC', 'DESC'];
-  const types = ['SERIAL', 'VARCHAR', 'INTEGER', 'INT', 'DECIMAL', 'TEXT', 'TIMESTAMP', 'BOOLEAN', 'DATETIME', 'REAL', 'NVARCHAR', 'MAX', 'BIT', 'FLOAT', 'DOUBLE', 'NUMERIC'];
+  const keywords = [
+    'CREATE', 'TABLE', 'ALTER', 'ADD', 'FOREIGN', 'KEY', 'REFERENCES', 
+    'INDEX', 'ON', 'DEFAULT', 'NOT', 'NULL', 'UNIQUE', 'PRIMARY', 
+    'CHECK', 'CONSTRAINT', 'IDENTITY', 'AUTO_INCREMENT', 'ENGINE', 
+    'InnoDB', 'GO', 'USE', 'IF', 'EXISTS', 'ASC', 'DESC'
+  ];
   
-  const words = line.split(/(\s+|[(),;`[\]])/); 
+  const types = [
+    'SERIAL', 'VARCHAR', 'INTEGER', 'INT', 'DECIMAL', 'TEXT', 
+    'TIMESTAMP', 'BOOLEAN', 'DATETIME', 'REAL', 'NVARCHAR', 
+    'MAX', 'BIT', 'FLOAT', 'DOUBLE', 'NUMERIC'
+  ];
   
-  return words.map((word, idx) => {
-    const upper = word.toUpperCase();
-    if (keywords.includes(upper)) {
-      return <span key={idx} className="text-cyan-400 font-semibold">{word}</span>;
-    }
-    if (types.includes(upper) || upper.startsWith('VARCHAR') || upper.startsWith('DECIMAL')) {
-      return <span key={idx} className="text-yellow-400">{word}</span>;
-    }
-    if (word.startsWith('"') || word.startsWith("'") || word.startsWith('`') || (word.startsWith('[') && word.endsWith(']'))) {
-      return <span key={idx} className="text-green-400">{word}</span>;
-    }
-    if (word.startsWith('--') || word.startsWith('/*')) {
-      return <span key={idx} className="text-slate-500 italic">{word}</span>;
-    }
-    return <span key={idx}>{word}</span>;
+  const tokens = line.split(/(\s+|[(),;`[\]])/); 
+  
+  return tokens.map((token, idx) => {
+    const upper = token.toUpperCase();
+    if (keywords.includes(upper)) return <span key={idx} className="text-cyan-400 font-semibold">{token}</span>;
+    if (types.includes(upper) || upper.startsWith('VARCHAR') || upper.startsWith('DECIMAL')) return <span key={idx} className="text-yellow-400">{token}</span>;
+    if (token.startsWith('"') || token.startsWith("'") || token.startsWith('`') || (token.startsWith('[') && token.endsWith(']'))) return <span key={idx} className="text-green-400">{token}</span>;
+    if (token.startsWith('--') || token.startsWith('/*')) return <span key={idx} className="text-slate-500 italic">{token}</span>;
+    return <span key={idx}>{token}</span>;
   });
 };
 
@@ -168,25 +175,15 @@ const highlightMongo = (line: string) => {
   const types = ['String', 'Number', 'Date', 'Boolean', 'ObjectId', 'Schema', 'mongoose'];
   const props = ['type', 'required', 'unique', 'default', 'ref', 'timestamps', 'enum', 'min', 'max'];
 
-  const words = line.split(/(\s+|[(),;:{}[\]])/);
+  const tokens = line.split(/(\s+|[(),;:{}[\]])/);
 
-  return words.map((word, idx) => {
-    if (keywords.includes(word)) {
-      return <span key={idx} className="text-purple-400 font-semibold">{word}</span>;
-    }
-    if (types.includes(word) || word.includes('Schema')) {
-      return <span key={idx} className="text-yellow-400">{word}</span>;
-    }
-    if (props.includes(word)) {
-      return <span key={idx} className="text-cyan-400">{word}</span>;
-    }
-    if (word.startsWith("'") || word.startsWith('"')) {
-      return <span key={idx} className="text-green-400">{word}</span>;
-    }
-    if (word.startsWith('//')) {
-      return <span key={idx} className="text-slate-500 italic">{word}</span>;
-    }
-    return <span key={idx}>{word}</span>;
+  return tokens.map((token, idx) => {
+    if (keywords.includes(token)) return <span key={idx} className="text-purple-400 font-semibold">{token}</span>;
+    if (types.includes(token) || token.includes('Schema')) return <span key={idx} className="text-yellow-400">{token}</span>;
+    if (props.includes(token)) return <span key={idx} className="text-cyan-400">{token}</span>;
+    if (token.startsWith("'") || token.startsWith('"')) return <span key={idx} className="text-green-400">{token}</span>;
+    if (token.startsWith('//')) return <span key={idx} className="text-slate-500 italic">{token}</span>;
+    return <span key={idx}>{token}</span>;
   });
 };
 
@@ -195,25 +192,15 @@ const highlightPrisma = (line: string) => {
   const types = ['Int', 'String', 'DateTime', 'Boolean', 'Decimal'];
   const decorators = ['@id', '@default', '@unique', '@relation', '@map', '@updatedAt', '@@map', '@@index'];
 
-  const words = line.split(/(\s+|[(){}[\]])/);
+  const tokens = line.split(/(\s+|[(){}[\]])/);
 
-  return words.map((word, idx) => {
-    if (keywords.includes(word)) {
-        return <span key={idx} className="text-cyan-400 font-semibold">{word}</span>;
-    }
-    if (types.includes(word)) {
-        return <span key={idx} className="text-yellow-400">{word}</span>;
-    }
-    if (decorators.some(d => word.startsWith(d))) {
-        return <span key={idx} className="text-purple-400">{word}</span>;
-    }
-    if (word.startsWith('"')) {
-        return <span key={idx} className="text-green-400">{word}</span>;
-    }
-    if (word.startsWith('//')) {
-        return <span key={idx} className="text-slate-500 italic">{word}</span>;
-    }
-    return <span key={idx}>{word}</span>;
+  return tokens.map((token, idx) => {
+    if (keywords.includes(token)) return <span key={idx} className="text-cyan-400 font-semibold">{token}</span>;
+    if (types.includes(token)) return <span key={idx} className="text-yellow-400">{token}</span>;
+    if (decorators.some(d => token.startsWith(d))) return <span key={idx} className="text-purple-400">{token}</span>;
+    if (token.startsWith('"')) return <span key={idx} className="text-green-400">{token}</span>;
+    if (token.startsWith('//')) return <span key={idx} className="text-slate-500 italic">{token}</span>;
+    return <span key={idx}>{token}</span>;
   });
 };
 
